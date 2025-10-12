@@ -2,6 +2,7 @@ from flask import Blueprint, request, jsonify
 from app.services.lexer_service import JWTLexer
 from app.models.db import db, test_cases
 from app.services.lexer_service import Alfabeto
+from app.services.sintactico import JWTParser
 
 jwt_bp = Blueprint("jwt_bp", __name__)
 
@@ -29,7 +30,18 @@ def analyze_jwt():
         "advertencias": lexer.advertencias
     }
 
+    # === FASE 2: SINTÁCTICO ===
+    parser = JWTParser(lexer.tokens)
+    sintaxis_valida = parser.parsear()
+    resultado["sintactico"] = {
+        "valido": sintaxis_valida,
+        "errores": parser.errores,
+        "arbol_sintactico": parser.generar_arbol()
+    }
+
    # guardar_resultado(nombre, token, resultado)
+
+   
 
     return jsonify(resultado)
 

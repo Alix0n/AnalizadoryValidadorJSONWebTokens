@@ -3,6 +3,8 @@ const outputTitle = document.getElementById("outputTitle");
 const jwtInput = document.getElementById("jwtInput");
 const analyzeAllBtn = document.getElementById("analyzeAllBtn");
 const lexicoBtn = document.getElementById("lexicoBtn");
+const sintacticoBtn = document.getElementById("sintacticoBtn");
+
 
 const API_URL = "http://127.0.0.1:5000/api/analyze";
 
@@ -98,4 +100,36 @@ validateBtn.addEventListener("click", () => {
 
   showOutput("Validación de Token JWT", html);
 });
+
+// 🔹 Ejecutar solo el análisis sintáctico
+sintacticoBtn.addEventListener("click", async () => {
+  const jwt = jwtInput.value.trim();
+  if (!jwt) return alert("Por favor ingresa un token JWT.");
+
+  showOutput("Analizando Fase 2: Sintáctica...", "<p>Procesando...</p>");
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jwt })
+    });
+
+    const data = await res.json();
+    const sintactico = data.sintactico;
+
+    // Formatear visualmente la información sintáctica
+    let html = "";
+    html += createSection("📘 Árbol Sintáctico", sintactico.arbol_sintactico, "🌳");
+    html += createSection("📗 Resultado", sintactico.valido ? "Estructura válida ✅" : "Estructura inválida ❌");
+    if (sintactico.errores?.length) {
+      html += createSection("❌ Errores Sintácticos", sintactico.errores);
+    }
+
+    showOutput("📘 Resultados del Análisis Sintáctico", html);
+  } catch (err) {
+    showOutput("Error en análisis sintáctico", `<p style='color:red;'>${err.message}</p>`);
+  }
+});
+
 
