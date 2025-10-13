@@ -3,6 +3,8 @@ from app.services.lexer_service import JWTLexer
 from app.models.db import db, test_cases
 from app.services.lexer_service import Alfabeto
 from app.services.sintactico import JWTParser
+from app.services.semantic_service import analizar_header_semantico, analizar_payload_semantico, validar_tiempo, generar_tabla_simbolos
+
 
 jwt_bp = Blueprint("jwt_bp", __name__)
 
@@ -41,8 +43,20 @@ def analyze_jwt():
 
    # guardar_resultado(nombre, token, resultado)
 
-   
+   # === FASE 3: SEMANTICA ===
+    # === FASE 3: SEMÁNTICA ===
+    errores_header = analizar_header_semantico(lexer.header_decodificado)
+    errores_payload = analizar_payload_semantico(lexer.payload_decodificado)
+    validacion_tiempo = validar_tiempo(lexer.payload_decodificado)
+    tabla_simbolos = generar_tabla_simbolos(
+        lexer.header_decodificado, lexer.payload_decodificado
+    )
 
+    resultado["semantico"] = {
+        "errores": errores_header + errores_payload,
+        "validacion_tiempo": validacion_tiempo,
+        "tabla_simbolos": tabla_simbolos
+    }
     return jsonify(resultado)
 
 

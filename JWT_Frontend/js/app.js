@@ -44,7 +44,12 @@ analyzeAllBtn.addEventListener("click", async () => {
     html += createSection("Payload Decodificado", data.payload_decodificado);
     if (data.advertencias?.length) html += createSection("Advertencias", data.advertencias);
     if (data.errores?.length) html += createSection("Errores", data.errores);
-
+    // Fase Sintáctica
+    html += createSection("Análisis Sintáctico", data.sintactico);
+    // Fase Semántica
+    html += createSection("Errores Semánticos", data.semantico.errores);
+    html += createSection("Validación Temporal", data.semantico.validacion_tiempo);
+    html += createSection("Tabla de Símbolos", data.semantico.tabla_simbolos);
     showOutput("Análisis Completo del Token", html);
   } catch (err) {
     showOutput("Error", `<p style='color:red;'>${err.message}</p>`);
@@ -120,16 +125,67 @@ sintacticoBtn.addEventListener("click", async () => {
 
     // Formatear visualmente la información sintáctica
     let html = "";
-    html += createSection("📘 Árbol Sintáctico", sintactico.arbol_sintactico, "🌳");
-    html += createSection("📗 Resultado", sintactico.valido ? "Estructura válida ✅" : "Estructura inválida ❌");
+    html += createSection("Árbol Sintáctico", sintactico.arbol_sintactico);
+    html += createSection("Resultado", sintactico.valido ? "Estructura válida " : "Estructura inválida ");
     if (sintactico.errores?.length) {
-      html += createSection("❌ Errores Sintácticos", sintactico.errores);
+      html += createSection("Errores Sintácticos", sintactico.errores);
     }
 
-    showOutput("📘 Resultados del Análisis Sintáctico", html);
+    showOutput("Resultados del Análisis Sintáctico", html);
   } catch (err) {
     showOutput("Error en análisis sintáctico", `<p style='color:red;'>${err.message}</p>`);
   }
 });
 
+semanticoBtn.addEventListener("click", async () => {
+  const jwt = jwtInput.value.trim();
+  if (!jwt) return alert("Por favor ingresa un token JWT.");
 
+  showOutput("Analizando Fase 3: Semántica...", "<p>Procesando...</p>");
+
+  try {
+    const res = await fetch(API_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ jwt })
+    });
+
+    const data = await res.json();
+    const semantico = data.semantico;
+
+    let html = "";
+
+    html += createSection("Errores Semánticos", semantico.errores.length ? semantico.errores : "Sin errores");
+
+    html += createSection("Validación Temporal", semantico.validacion_tiempo);
+
+    const tablaHTML = `
+      <table class="symbol-table">
+        <thead>
+          <tr>
+            <th>Componente</th>
+            <th>Nombre</th>
+            <th>Tipo</th>
+            <th>Valor</th>
+          </tr>
+        </thead>
+        <tbody>
+          ${semantico.tabla_simbolos.map(row => `
+            <tr>
+              <td>${row.componente}</td>
+              <td>${row.nombre}</td>
+              <td>${row.tipo}</td>
+              <td>${row.valor}</td>
+            </tr>
+          `).join('')}
+        </tbody>
+      </table>
+    `;
+
+    html += createSection("Tabla de Símbolos", tablaHTML);
+
+    showOutput("Resultados del Análisis Semántico", html);
+  } catch (err) {
+    showOutput("Error en análisis semántico", `<p style='color:red;'>${err.message}</p>`);
+  }
+});

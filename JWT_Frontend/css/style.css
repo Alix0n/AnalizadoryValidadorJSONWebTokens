@@ -192,3 +192,29 @@ footer {
     height: 80px;
   }
 }
+
+.symbol-table {
+  width: 100%;
+  border-collapse: collapse;
+  margin-top: 1rem;
+}
+
+.symbol-table th, .symbol-table td {
+  border: 1px solid #cbd5e1;
+  padding: 8px 12px;
+  text-align: left;
+}
+
+.symbol-table th {
+  background-color: #e2e8f0;
+  color: #1e293b;
+  font-weight: 600;
+}
+
+.symbol-table tr:nth-child(even) {
+  background-color: #f8fafc;
+}
+
+.symbol-table tr:hover {
+  background-color: #e0f2fe;
+}
