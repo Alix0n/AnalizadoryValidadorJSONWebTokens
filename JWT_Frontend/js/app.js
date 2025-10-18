@@ -4,9 +4,15 @@ const jwtInput = document.getElementById("jwtInput");
 const analyzeAllBtn = document.getElementById("analyzeAllBtn");
 const lexicoBtn = document.getElementById("lexicoBtn");
 const sintacticoBtn = document.getElementById("sintacticoBtn");
+const encodeBtn = document.getElementById("encodeBtn");
+const payloadInput = document.getElementById("payloadInput");
+const secretInput = document.getElementById("secretInput");
+const algorithmSelect = document.getElementById("algorithmSelect");
+const expirationInput = document.getElementById("expirationInput");
 
 
 const API_URL = "http://127.0.0.1:5000/api/analyze";
+const API_ENCODE_URL = "http://127.0.0.1:5000/api/encode";
 
 function createSection(title, content) {
   return `
@@ -187,5 +193,62 @@ semanticoBtn.addEventListener("click", async () => {
     showOutput("Resultados del Análisis Semántico", html);
   } catch (err) {
     showOutput("Error en análisis semántico", `<p style='color:red;'>${err.message}</p>`);
+  }
+});
+
+encodeBtn.addEventListener("click", async () => {
+  const payloadText = payloadInput.value.trim();
+  const secret = secretInput.value.trim();
+  const algorithm = algorithmSelect.value;
+  const expiresIn = expirationInput.value ? parseInt(expirationInput.value) : null;
+
+  if (!payloadText || !secret)
+    return alert("Por favor ingresa el payload (JSON válido) y la clave secreta.");
+
+  let payload;
+  try {
+    payload = JSON.parse(payloadText);
+  } catch {
+    return alert("❌ El payload no tiene formato JSON válido.");
+  }
+
+  showOutput("Codificando JWT...", "<p>Procesando...</p>");
+
+  try {
+    const res = await fetch(API_ENCODE_URL, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ payload, secret, algorithm, expires_in: expiresIn })
+    });
+
+    const data = await res.json();
+
+    if (!data.success) {
+      showOutput("❌ Error en codificación", `<p>${data.error}</p>`);
+      return;
+    }
+
+    let html = `
+      <div class="section">
+        <h3>✅ Token Generado</h3>
+        <pre>${data.jwt}</pre>
+      </div>
+      <div class="section">
+        <h3>🧩 Header</h3>
+        <pre>${JSON.stringify(data.header, null, 2)}</pre>
+      </div>
+      <div class="section">
+        <h3>💾 Payload</h3>
+        <pre>${JSON.stringify(data.payload, null, 2)}</pre>
+      </div>
+      <div class="section">
+        <h3>🔏 Firma</h3>
+        <pre>${data.signature}</pre>
+      </div>
+    `;
+
+    showOutput("🔐 Resultado de Codificación JWT", html);
+  } catch (err) {
+    showOutput("Error", `<p style="color:red;">${err.message}</p>`);
   }
 });

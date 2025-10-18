@@ -4,7 +4,7 @@ from app.models.db import db, test_cases
 from app.services.lexer_service import Alfabeto
 from app.services.sintactico import JWTParser
 from app.services.semantic_service import analizar_header_semantico, analizar_payload_semantico, validar_tiempo, generar_tabla_simbolos
-
+from app.services.encoder_service import JWTEncoder
 
 jwt_bp = Blueprint("jwt_bp", __name__)
 
@@ -59,6 +59,64 @@ def analyze_jwt():
     }
     return jsonify(resultado)
 
+
+# ===================================================================
+# ✅ FASE 5: Codificación de JWT
+# ===================================================================
+@jwt_bp.route("/encode", methods=["POST"])
+def encode_jwt():
+    """
+    Genera (codifica) un JWT desde un header/payload/secret/algoritmo.
+    Ejemplo de body JSON:
+    {
+      "payload": {"sub": "123", "name": "Alice"},
+      "secret": "mi_clave",
+      "algorithm": "HS256",
+      "header": {"typ": "JWT"},
+      "expires_in": 3600
+    }
+    """
+    data = request.get_json() or {}
+
+    payload = data.get("payload")
+    secret = data.get("secret")
+    algorithm = data.get("algorithm", "HS256")
+    header = data.get("header")
+    expires_in = data.get("expires_in")
+    add_iat = data.get("add_iat", True)
+
+    if not payload or not secret:
+        return jsonify({"error": "Se requieren 'payload' y 'secret'"}), 400
+
+    encoder = JWTEncoder()
+
+    # Generar JWT con o sin expiración
+    if expires_in:
+        result = encoder.encode_with_expiration(
+            payload, secret, expires_in_seconds=expires_in, algorithm=algorithm
+        )
+    else:
+        result = encoder.encode(
+            payload, secret, algorithm=algorithm, header=header, add_iat=add_iat
+        )
+
+    # Registrar en base si deseas
+    # test_cases.insert_one({"fase": "codificacion", "resultado": result.__dict__})
+
+    if result.success:
+        print(f"✅ JWT generado con éxito ({algorithm})")
+    else:
+        print(f"❌ Error en generación JWT: {result.error}")
+
+    return jsonify({
+        "success": result.success,
+        "jwt": result.jwt,
+        "header": result.header,
+        "payload": result.payload,
+        "signature": result.signature,
+        "algorithm": result.algorithm,
+        "error": result.error
+    })
 
 @jwt_bp.route("/test-db", methods=["GET"])
 def test_db():

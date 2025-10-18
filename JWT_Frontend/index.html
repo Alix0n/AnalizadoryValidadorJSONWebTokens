@@ -34,6 +34,31 @@
         </div>
       </section>
 
+      <!-- === FASE 5: CODIFICACIÓN DE JWT === -->
+      <section class="encode-section">
+        <h2>Codificar Nuevo Token JWT</h2>
+
+        <label for="payloadInput">Payload (JSON):</label>
+        <textarea id="payloadInput" placeholder='{"sub": "123", "name": "Alixon"}'></textarea>
+
+        <label for="secretInput">Clave Secreta:</label>
+        <input type="text" id="secretInput" placeholder="Ej: mi_clave_super_segura">
+
+        <label for="algorithmSelect">Algoritmo:</label>
+        <select id="algorithmSelect">
+          <option value="HS256">HS256 (SHA-256)</option>
+          <option value="HS384">HS384 (SHA-384)</option>
+          <option value="HS512">HS512 (SHA-512)</option>
+        </select>
+
+        <label for="expirationInput">Expira en (segundos):</label>
+        <input type="number" id="expirationInput" placeholder="Ej: 3600">
+
+        <button id="encodeBtn" class="btn-encode">Generar Token JWT</button>
+      </section>
+
+
+
       <section class="output-section">
         <h2 id="outputTitle">Resultados</h2>
         <pre id="output"></pre>

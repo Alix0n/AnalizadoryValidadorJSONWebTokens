@@ -218,3 +218,38 @@ footer {
 .symbol-table tr:hover {
   background-color: #e0f2fe;
 }
+
+.encode-section {
+  background-color: #f5faff;
+  border: 1px solid #cce5ff;
+  border-radius: 12px;
+  padding: 1.5rem;
+  margin-top: 2rem;
+  box-shadow: 0 2px 6px rgba(0,0,0,0.05);
+}
+
+.encode-section textarea,
+.encode-section input,
+.encode-section select {
+  width: 100%;
+  padding: 0.6rem;
+  border: 1px solid #ccc;
+  border-radius: 8px;
+  font-family: "Poppins", sans-serif;
+}
+
+.btn-encode {
+  background-color: #4caf50;
+  color: white;
+  border: none;
+  padding: 0.8rem;
+  border-radius: 8px;
+  cursor: pointer;
+  font-weight: 600;
+  margin-top: 1rem;
+}
+
+.btn-encode:hover {
+  background-color: #45a049;
+}
+
