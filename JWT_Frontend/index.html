@@ -7,6 +7,30 @@
   <link rel="preconnect" href="https://fonts.googleapis.com">
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
   <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@300;500;700&display=swap" rel="stylesheet">
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    /* Pequeños ajustes en línea por si el CSS externo falta */
+    body { font-family: 'Poppins', sans-serif; background:#f7f8fb; color:#222; margin:0; padding:0; }
+    .app-container { max-width:1100px; margin:24px auto; background:#fff; border-radius:10px; box-shadow:0 8px 24px rgba(0,0,0,0.06); overflow:hidden; }
+    header { padding:20px 28px; border-bottom:1px solid #eee; background: linear-gradient(90deg,#ffffff,#f9fbff); }
+    header h1 { margin:0; font-size:20px; }
+    header p { margin:4px 0 0 0; color:#6b7280; font-size:13px; }
+    main { padding:20px 28px; display:grid; grid-template-columns: 1fr 420px; gap:20px; }
+    .input-section, .encode-section { background: #fff; padding:16px; border-radius:8px; border:1px solid #f0f2f5; }
+    textarea, input[type="text"], input[type="number"], select { width:100%; padding:10px; border-radius:6px; border:1px solid #ddd; font-family:monospace; box-sizing:border-box; }
+    .button-group { display:flex; gap:8px; align-items:center; margin-top:8px; }
+    .btn-primary, .btn-encode { background:#2563eb; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    .btn-validate, .btn-secondary { background:#10b981; color:white; border:none; padding:8px 12px; border-radius:6px; cursor:pointer; }
+    .btn-encode { background:#4caf50; }
+    .dropdown { position:relative; display:inline-block; }
+    .dropdown-content { display:none; position:absolute; right:0; background:#fff; min-width:180px; box-shadow:0 6px 18px rgba(0,0,0,0.08); border-radius:8px; padding:8px; z-index:20; }
+    .dropdown:hover .dropdown-content { display:block; }
+    .dropdown-content button { display:block; width:100%; padding:8px; border:none; background:transparent; text-align:left; cursor:pointer; border-radius:6px; }
+    .output-section pre { white-space:pre-wrap; max-height:520px; overflow:auto; background:#fafafa; padding:12px; border-radius:6px; border:1px solid #eee; }
+    footer { padding:12px 28px; font-size:13px; color:#6b7280; border-top:1px solid #eee; text-align:center; background:#fff; }
+    .section { margin-bottom:12px; }
+    .loading { color:#374151; font-weight:600; }
+  </style>
 </head>
 
 <body>
@@ -17,59 +41,97 @@
     </header>
 
     <main>
-      <section class="input-section">
-        <h2>Ingresa tu Token JWT</h2>
-        <textarea id="jwtInput" placeholder="Pega tu token JWT aquí..."></textarea>
-        <div class="button-group">
-          <button id="analyzeAllBtn" class="btn-primary">Analizar Token Completo</button>
-          <button id="validateBtn" class="btn-validate">Validar Token</button>
-          <div class="dropdown">
-            <button class="btn-secondary" id="phaseBtn">Analizar por Fase ▾</button>
-            <div class="dropdown-content">
-              <button class="phase-btn" id="lexicoBtn">Análisis Léxico</button>
-              <button class="phase-btn" id="sintacticoBtn">Análisis Sintáctico</button>
-              <button class="phase-btn" id="semanticoBtn">Análisis Semántico</button>
+      <!-- Columna principal: input y análisis -->
+      <div>
+        <section class="input-section">
+          <h2>Ingresa tu Token JWT</h2>
+          <textarea id="jwtInput" rows="6" placeholder="Pega tu token JWT aquí..."></textarea>
+          <!-- Campo opcional: clave para verificar firma (separada de la clave de codificación) -->
+          <div style="margin-top:10px;">
+            <label for="verifySecretInput" style="display:block; font-size:13px; color:#374151; margin-bottom:6px;">
+              Clave para Verificar Firma (opcional)
+            </label>
+            <input type="text" id="verifySecretInput" placeholder="Deja vacío para decodificar sin verificar (opcional)" style="width:100%; padding:8px; border-radius:6px; border:1px solid #ddd; font-family:monospace;" />
+            <small style="color:#6b7280; display:block; margin-top:6px;">
+              Si tu token es HS*, pega aquí la misma <em>secret</em> usada para firmarlo. Si es RS*, pega la <em>public key PEM</em>.
+            </small>
+          </div>
+
+
+          <div class="button-group" style="margin-top:12px;">
+            <button id="analyzeAllBtn" class="btn-primary">Analizar Token Completo</button>
+            <button id="validateBtn" type="button" class="btn-validate">Validar Token</button>
+
+
+            <div class="dropdown" style="margin-left:auto;">
+              <button class="btn-secondary" id="phaseBtn">Analizar por Fase ▾</button>
+              <div class="dropdown-content" aria-labelledby="phaseBtn">
+                <button class="phase-btn" id="lexicoBtn">Análisis Léxico</button>
+                <button class="phase-btn" id="sintacticoBtn">Análisis Sintáctico</button>
+                <button class="phase-btn" id="semanticoBtn">Análisis Semántico</button>
+              </div>
             </div>
           </div>
-        </div>
-      </section>
+        </section>
 
-      <!-- === FASE 5: CODIFICACIÓN DE JWT === -->
-      <section class="encode-section">
-        <h2>Codificar Nuevo Token JWT</h2>
+        <!-- Salida / resultados -->
+        <section class="output-section" style="margin-top:16px;">
+          <h2 id="outputTitle">Resultados</h2>
+          <pre id="output">Aquí aparecerán los resultados de análisis y codificación.</pre>
+        </section>
+      </div>
 
-        <label for="payloadInput">Payload (JSON):</label>
-        <textarea id="payloadInput" placeholder='{"sub": "123", "name": "Alixon"}'></textarea>
+      <!-- Columna derecha: codificación -->
+      <aside>
+        <section class="encode-section">
+          <h2>Codificar Nuevo Token JWT (PyJWT)</h2>
 
-        <label for="secretInput">Clave Secreta:</label>
-        <input type="text" id="secretInput" placeholder="Ej: mi_clave_super_segura">
+          <label for="payloadInput" style="display:block; margin-top:8px;">Payload (JSON):</label>
+          <textarea id="payloadInput" rows="6" placeholder='{"sub": "123", "name": "Alixon"}'></textarea>
 
-        <label for="algorithmSelect">Algoritmo:</label>
-        <select id="algorithmSelect">
-          <option value="HS256">HS256 (SHA-256)</option>
-          <option value="HS384">HS384 (SHA-384)</option>
-          <option value="HS512">HS512 (SHA-512)</option>
-        </select>
+          <label for="secretInput" style="display:block; margin-top:8px;">Clave Secreta:</label>
+          <input type="text" id="secretInput" placeholder="Ej: G7v!r9Qz#kLp2X8sVt4wYbN6uF0aZm3Hq@1cD5eR">
 
-        <label for="expirationInput">Expira en (segundos):</label>
-        <input type="number" id="expirationInput" placeholder="Ej: 3600">
+          <label for="algorithmSelect" style="display:block; margin-top:8px;">Algoritmo:</label>
+          <select id="algorithmSelect">
+            <option value="HS256" selected>HS256 (SHA-256)</option>
+            <option value="HS384">HS384 (SHA-384)</option>
+            <option value="HS512">HS512 (SHA-512)</option>
+          </select>
 
-        <button id="encodeBtn" class="btn-encode">Generar Token JWT</button>
-      </section>
+          <label for="expirationInput" style="display:block; margin-top:8px;">Expira en (segundos):</label>
+          <input type="number" id="expirationInput" placeholder="Ej: 3600">
 
+          <div style="display:flex; gap:8px; margin-top:12px;">
+            <button id="encodeBtn" class="btn-encode">Generar Token JWT</button>
+            <button onclick="clearEncodeForm()" class="btn-secondary">Limpiar</button>
+            <button onclick="setExamplePayload()" class="btn-secondary">Ejemplo payload</button>
+          </div>
 
+          <div style="font-size:12px; color:#6b7280; margin-top:10px;">
+            <p><strong>Nota:</strong> Esta interfaz usa siempre <em>PyJWT</em> para codificar y verificar tokens. No expongas tu clave secreta en repositorios ni en entornos públicos.</p>
+          </div>
+        </section>
 
-      <section class="output-section">
-        <h2 id="outputTitle">Resultados</h2>
-        <pre id="output"></pre>
-      </section>
+        <section style="margin-top:16px; background:#fff; padding:12px; border-radius:8px; border:1px solid #f0f2f5;">
+          <h3>Operaciones adicionales</h3>
+          <p style="font-size:13px; color:#374151;">Puedes usar los siguientes endpoints desde la UI:</p>
+          <ul style="font-size:13px; color:#374151;">
+            <li><code>/api/analyze</code> — Analiza token (léxico, sintáctico, semántico)</li>
+            <li><code>/api/encode</code> — Genera token (PyJWT)</li>
+            <li><code>/api/decode-verify</code> — Decodifica y verifica firma</li>
+            <li><code>/api/validate-secret</code> — Valida fortaleza de la clave</li>
+          </ul>
+        </section>
+      </aside>
     </main>
 
     <footer>
-      <p>Desarrollado por [Estefania Rojas - Alixon Lopez — Flask + MongoDB + HTML/CSS/JS</p>
+      <p>Desarrollado por Estefanía Rojas &mdash; Alixon Lopez — Flask + MongoDB + HTML/CSS/JS</p>
     </footer>
   </div>
 
+  <!-- Tu script (asegúrate de que static/js/app.js exista y use siempre use_pyjwt:true) -->
   <script src="js/app.js"></script>
 </body>
 </html>

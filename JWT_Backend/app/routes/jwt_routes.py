@@ -1,20 +1,20 @@
+# app/routes/jwt_routes.py
 from flask import Blueprint, request, jsonify
-from app.services.lexer_service import JWTLexer
-from app.models.db import db, test_cases
-from app.services.lexer_service import Alfabeto
+from app.services.encoder_service import JWTEncoder, SecretKeyManager
+from app.services.lexer_service import JWTLexer, Alfabeto
 from app.services.sintactico import JWTParser
 from app.services.semantic_service import analizar_header_semantico, analizar_payload_semantico, validar_tiempo, generar_tabla_simbolos
-from app.services.encoder_service import JWTEncoder
+from app.models.db import db, test_cases
 
-jwt_bp = Blueprint("jwt_bp", __name__)
+import jwt  # PyJWT
 
-#from app.models.db import guardar_resultado
+jwt_bp = Blueprint("jwt_bp", __name__, url_prefix="/api")
+
 
 @jwt_bp.route("/analyze", methods=["POST"])
 def analyze_jwt():
-    data = request.get_json()
-    token = data.get("jwt")
-    nombre = data.get("nombre", "Caso sin nombre")
+    data = request.get_json() or {}
+    token = data.get("jwt", "")
 
     lexer = JWTLexer(token)
     lexer.tokenizar()
@@ -32,7 +32,7 @@ def analyze_jwt():
         "advertencias": lexer.advertencias
     }
 
-    # === FASE 2: SINTÁCTICO ===
+    # Sintáctico
     parser = JWTParser(lexer.tokens)
     sintaxis_valida = parser.parsear()
     resultado["sintactico"] = {
@@ -41,94 +41,161 @@ def analyze_jwt():
         "arbol_sintactico": parser.generar_arbol()
     }
 
-   # guardar_resultado(nombre, token, resultado)
-
-   # === FASE 3: SEMANTICA ===
-    # === FASE 3: SEMÁNTICA ===
+    # Semántico
     errores_header = analizar_header_semantico(lexer.header_decodificado)
     errores_payload = analizar_payload_semantico(lexer.payload_decodificado)
     validacion_tiempo = validar_tiempo(lexer.payload_decodificado)
-    tabla_simbolos = generar_tabla_simbolos(
-        lexer.header_decodificado, lexer.payload_decodificado
-    )
+    tabla_simbolos = generar_tabla_simbolos(lexer.header_decodificado, lexer.payload_decodificado)
 
     resultado["semantico"] = {
         "errores": errores_header + errores_payload,
         "validacion_tiempo": validacion_tiempo,
         "tabla_simbolos": tabla_simbolos
     }
+
     return jsonify(resultado)
 
 
-# ===================================================================
-# ✅ FASE 5: Codificación de JWT
-# ===================================================================
 @jwt_bp.route("/encode", methods=["POST"])
 def encode_jwt():
+    try:
+        data = request.get_json() or {}
+        payload = data.get("payload")
+        secret = data.get("secret")
+        if not payload:
+            return jsonify({"success": False, "error": "El campo 'payload' es requerido"}), 400
+        if not secret:
+            return jsonify({"success": False, "error": "El campo 'secret' es requerido"}), 400
+
+        algorithm = data.get("algorithm", "HS256")
+        header = data.get("header")
+        expires_in = data.get("expires_in")
+        add_iat = data.get("add_iat", True)
+        validate_secret = data.get("validate_secret", True)
+
+        # Usa tu JWTEncoder (que internamente puede usar PyJWT)
+        encoder = JWTEncoder(validate_secret=validate_secret)
+
+        if expires_in:
+            result = encoder.encode_with_expiration(payload=payload, secret=secret, expires_in_seconds=expires_in, algorithm=algorithm)
+        else:
+            result = encoder.encode(payload=payload, secret=secret, algorithm=algorithm, header=header, add_iat=add_iat)
+
+        if result.success:
+            response = {
+                "success": True,
+                "jwt": result.jwt,
+                "header": result.header,
+                "payload": result.payload,
+                "signature": result.signature,
+                "algorithm": result.algorithm,
+                "method": result.method
+            }
+            if result.warnings:
+                response["warnings"] = result.warnings
+            return jsonify(response), 200
+        else:
+            return jsonify({"success": False, "error": result.error}), 400
+
+    except Exception as e:
+        return jsonify({"success": False, "error": f"Error interno: {str(e)}"}), 500
+
+
+@jwt_bp.route("/decode-verify", methods=["POST"])
+def decode_verify_jwt():
     """
-    Genera (codifica) un JWT desde un header/payload/secret/algoritmo.
-    Ejemplo de body JSON:
-    {
-      "payload": {"sub": "123", "name": "Alice"},
-      "secret": "mi_clave",
-      "algorithm": "HS256",
-      "header": {"typ": "JWT"},
-      "expires_in": 3600
-    }
+    Decodifica y verifica un JWT usando PyJWT.
+    - Si 'secret' no se proporciona -> decodifica sin verificar (verified: False).
+    - Si 'secret' se proporciona -> intenta verificar la firma (verified True/False).
+    Respuesta siempre incluye "success" y "verified" (boolean).
     """
-    data = request.get_json() or {}
+    try:
+        data = request.get_json() or {}
+        token = data.get("jwt")
+        secret = data.get("secret", None)  # ahora opcional
+        algorithms = data.get("algorithms")  # opcional
+        verify = data.get("verify", True)
 
-    payload = data.get("payload")
-    secret = data.get("secret")
-    algorithm = data.get("algorithm", "HS256")
-    header = data.get("header")
-    expires_in = data.get("expires_in")
-    add_iat = data.get("add_iat", True)
+        if not token:
+            return jsonify({"success": False, "verified": False, "error": "El campo 'jwt' es requerido"}), 400
 
-    if not payload or not secret:
-        return jsonify({"error": "Se requieren 'payload' y 'secret'"}), 400
+        # Inferir algoritmo si no se pasó
+        if not algorithms:
+            try:
+                header = jwt.get_unverified_header(token)
+                alg = header.get("alg")
+                algorithms = [alg] if alg else ['HS256', 'HS384', 'HS512']
+            except Exception:
+                algorithms = ['HS256', 'HS384', 'HS512']
 
-    encoder = JWTEncoder()
+        # Si no hay secret: decodificar sin verificar y devolver header+payload
+        if not secret:
+            try:
+                payload = jwt.decode(token, options={"verify_signature": False})
+                header = jwt.get_unverified_header(token)
+                return jsonify({
+                    "success": True,
+                    "verified": False,
+                    "warning": "No se proporcionó clave para verificar la firma. Se decodificó sin verificación.",
+                    "header": header,
+                    "payload": payload
+                }), 200
+            except Exception as e:
+                return jsonify({"success": False, "verified": False, "error": f"No se pudo decodificar el token: {str(e)}"}), 400
 
-    # Generar JWT con o sin expiración
-    if expires_in:
-        result = encoder.encode_with_expiration(
-            payload, secret, expires_in_seconds=expires_in, algorithm=algorithm
-        )
-    else:
-        result = encoder.encode(
-            payload, secret, algorithm=algorithm, header=header, add_iat=add_iat
-        )
+        # Si se proporciona secret -> intento de verificación real
+        try:
+            # PyJWT acepta secret string (HS*) o public key PEM (RS*)
+            decoded = jwt.decode(token, secret, algorithms=algorithms, options={"verify_signature": verify})
+            return jsonify({"success": True, "verified": True, "payload": decoded}), 200
+        except jwt.ExpiredSignatureError:
+            return jsonify({"success": False, "verified": False, "error": "El token ha expirado"}), 400
+        except jwt.InvalidSignatureError:
+            return jsonify({"success": False, "verified": False, "error": "Firma inválida"}), 400
+        except jwt.InvalidTokenError as e:
+            return jsonify({"success": False, "verified": False, "error": f"Token inválido: {str(e)}"}), 400
 
-    # Registrar en base si deseas
-    # test_cases.insert_one({"fase": "codificacion", "resultado": result.__dict__})
+    except Exception as e:
+        return jsonify({"success": False, "verified": False, "error": f"Error al decodificar: {str(e)}"}), 500
 
-    if result.success:
-        print(f"✅ JWT generado con éxito ({algorithm})")
-    else:
-        print(f"❌ Error en generación JWT: {result.error}")
 
-    return jsonify({
-        "success": result.success,
-        "jwt": result.jwt,
-        "header": result.header,
-        "payload": result.payload,
-        "signature": result.signature,
-        "algorithm": result.algorithm,
-        "error": result.error
-    })
+@jwt_bp.route("/validate-secret", methods=["POST"])
+def validate_secret():
+    try:
+        data = request.get_json() or {}
+        secret = data.get('secret', '')
+        min_length = data.get('min_length', 32)
+        if not secret:
+            return jsonify({"valid": False, "message": "La clave secreta no puede estar vacía", "length": 0, "min_length": min_length}), 400
+        is_valid, error_msg = SecretKeyManager.validate_secret_key(secret, min_length)
+        response = {
+            "valid": is_valid,
+            "message": error_msg if not is_valid else "✅ La clave secreta es suficientemente segura",
+            "length": len(secret),
+            "min_length": min_length,
+            "recommendations": []
+        }
+        if not is_valid:
+            if len(secret) < min_length:
+                response["recommendations"].append(f"Aumenta la longitud a al menos {min_length} caracteres")
+            if not any(c.isupper() for c in secret):
+                response["recommendations"].append("Agrega al menos una letra mayúscula")
+            if not any(c.islower() for c in secret):
+                response["recommendations"].append("Agrega al menos una letra minúscula")
+            if not any(c.isdigit() for c in secret):
+                response["recommendations"].append("Agrega al menos un número")
+            if not any(not c.isalnum() for c in secret):
+                response["recommendations"].append("Agrega al menos un carácter especial (!@#$%^&*)")
+        return jsonify(response), 200
+    except Exception as e:
+        return jsonify({"valid": False, "error": f"Error al validar: {str(e)}"}), 500
+
 
 @jwt_bp.route("/test-db", methods=["GET"])
 def test_db():
     try:
-        # Inserta un documento de prueba
         test_cases.insert_one({"test": "conexion_exitosa"})
         count = test_cases.count_documents({})
-        return jsonify({
-            "mensaje": "Conexión a MongoDB exitosa ✅",
-            "documentos_totales": count
-        })
+        return jsonify({"mensaje": "Conexión a MongoDB exitosa ✅", "documentos_totales": count})
     except Exception as e:
-        return jsonify({
-            "error": f"No se pudo conectar a MongoDB ❌: {str(e)}"
-        }), 500
+        return jsonify({"error": f"No se pudo conectar a MongoDB ❌: {str(e)}"}), 500

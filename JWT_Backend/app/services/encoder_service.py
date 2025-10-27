@@ -1,8 +1,8 @@
 """
 app/services/encoder_service.py
 
-Fase 5: Codificación de JSON Web Tokens (JWT)
-Implementación de JWTEncoder (HS256/HS384/HS512) + Base64URL + JSON serializer.
+Versión simplificada: usa PyJWT para crear y verificar JWT (HS256/HS384/HS512).
+Se eliminó soporte RSA/cryptography para mantener la base usando únicamente PyJWT.
 """
 
 import json
@@ -10,10 +10,10 @@ import base64
 import hmac
 import hashlib
 import time
-from typing import Dict, Any, Optional
+import jwt  # PyJWT
+from typing import Dict, Any, Optional, Union, Tuple, List
 from dataclasses import dataclass
 from enum import Enum
-
 
 # -----------------------------
 # Signature algorithm helpers
@@ -31,12 +31,16 @@ class SignatureAlgorithm(Enum):
             'HS512': hashlib.sha512
         }
         if algorithm not in alg_map:
-            raise ValueError(f"Algoritmo no soportado: {algorithm}")
+            raise ValueError(f"Algoritmo no soportado para HMAC: {algorithm}")
         return alg_map[algorithm]
 
     @staticmethod
     def is_supported(algorithm: str) -> bool:
         return algorithm in ('HS256', 'HS384', 'HS512')
+
+    @staticmethod
+    def is_symmetric(algorithm: str) -> bool:
+        return algorithm.startswith('HS')
 
 
 # -----------------------------
@@ -54,9 +58,9 @@ class Base64URLEncoder:
 
     @staticmethod
     def decode(b64_url: str) -> bytes:
-        padding = 4 - (len(b64_url) % 4)
-        if padding != 4:
-            b64_url += '=' * padding
+        remainder = len(b64_url) % 4
+        if remainder:
+            b64_url += '=' * (4 - remainder)
         return base64.urlsafe_b64decode(b64_url)
 
     @staticmethod
@@ -86,19 +90,41 @@ class JSONSerializer:
 
 
 # -----------------------------
-# Signature generator (HMAC)
+# Secret Key Manager
+# -----------------------------
+class SecretKeyManager:
+    """Validación básica de claves secretas HMAC"""
+
+    @staticmethod
+    def validate_secret_key(secret: str, min_length: int = 32) -> Tuple[bool, Optional[str]]:
+        if not secret:
+            return False, "La clave secreta no puede estar vacía"
+        if len(secret) < min_length:
+            return False, f"La clave secreta debe tener al menos {min_length} caracteres"
+        has_upper = any(c.isupper() for c in secret)
+        has_lower = any(c.islower() for c in secret)
+        has_digit = any(c.isdigit() for c in secret)
+        has_special = any(not c.isalnum() for c in secret)
+        complexity_score = sum([has_upper, has_lower, has_digit, has_special])
+        if complexity_score < 3:
+            return False, "La clave debe contener al menos 3 de: mayúsculas, minúsculas, números, caracteres especiales"
+        return True, None
+
+
+# -----------------------------
+# Signature generator (HMAC only)
 # -----------------------------
 class SignatureGenerator:
     @staticmethod
-    def generate(message: str, secret: str, algorithm: str) -> bytes:
-        if not SignatureAlgorithm.is_supported(algorithm):
-            raise ValueError(f"Algoritmo no soportado: {algorithm}")
+    def generate_hmac(message: str, secret: str, algorithm: str) -> bytes:
+        if not SignatureAlgorithm.is_symmetric(algorithm):
+            raise ValueError(f"Algoritmo {algorithm} no es simétrico (HMAC)")
         hash_func = SignatureAlgorithm.get_hash_function(algorithm)
         return hmac.new(secret.encode('utf-8'), message.encode('utf-8'), digestmod=hash_func).digest()
 
     @staticmethod
     def generate_base64url(message: str, secret: str, algorithm: str) -> str:
-        sig = SignatureGenerator.generate(message, secret, algorithm)
+        sig = SignatureGenerator.generate_hmac(message, secret, algorithm)
         return Base64URLEncoder.encode(sig)
 
 
@@ -114,15 +140,22 @@ class JWTEncodeResult:
     algorithm: str
     success: bool
     error: Optional[str] = None
+    warnings: List[str] = None
+    method: str = "pyjwt"
+
+    def __post_init__(self):
+        if self.warnings is None:
+            self.warnings = []
 
 
 # -----------------------------
-# JWT Encoder
+# JWT Encoder (PyJWT-only)
 # -----------------------------
 class JWTEncoder:
-    def __init__(self):
-        self.errors = []
-        self.warnings = []
+    def __init__(self, validate_secret: bool = True):
+        self.errors: List[str] = []
+        self.warnings: List[str] = []
+        self.validate_secret = validate_secret
 
     def encode(
         self,
@@ -132,58 +165,51 @@ class JWTEncoder:
         header: Optional[Dict[str, Any]] = None,
         add_iat: bool = True
     ) -> JWTEncodeResult:
+        """
+        Codifica un JWT usando PyJWT (solo HS*)
+        """
         self.errors = []
         self.warnings = []
 
         try:
-            # Validate algorithm
             if not SignatureAlgorithm.is_supported(algorithm):
                 err = f"Algoritmo no soportado: {algorithm}"
                 self.errors.append(err)
-                return JWTEncodeResult("", header or {}, payload, "", algorithm, False, err)
+                return JWTEncodeResult("", header or {}, payload, "", algorithm, False, err, method="pyjwt")
 
-            # Build header
-            if header is None:
-                header = {"alg": algorithm, "typ": "JWT"}
-            else:
-                header = dict(header)  # shallow copy
-                header["alg"] = algorithm
-                if "typ" not in header:
-                    header["typ"] = "JWT"
+            if self.validate_secret and SignatureAlgorithm.is_symmetric(algorithm):
+                is_valid, error_msg = SecretKeyManager.validate_secret_key(secret)
+                if not is_valid:
+                    self.warnings.append(f"⚠️ Advertencia de seguridad: {error_msg}")
 
-            # Add iat if requested
-            if add_iat and 'iat' not in payload:
-                payload = dict(payload)  # copy to avoid mutating caller
-                payload['iat'] = int(time.time())
+            payload_copy = dict(payload)
+            if add_iat and 'iat' not in payload_copy:
+                payload_copy['iat'] = int(time.time())
 
-            # Serialize
-            header_json = JSONSerializer.serialize(header)
-            payload_json = JSONSerializer.serialize(payload)
+            jwt_token = jwt.encode(payload_copy, secret, algorithm=algorithm, headers=header)
 
-            # Base64URL encode
-            header_b64 = Base64URLEncoder.encode_string(header_json)
-            payload_b64 = Base64URLEncoder.encode_string(payload_json)
+            # PyJWT v1.x -> bytes, v2.x -> str
+            if isinstance(jwt_token, bytes):
+                jwt_token = jwt_token.decode('utf-8')
 
-            # Message to sign
-            message = f"{header_b64}.{payload_b64}"
+            parts = jwt_token.split('.')
+            header_decoded = jwt.get_unverified_header(jwt_token)
 
-            # Signature
-            signature_b64 = SignatureGenerator.generate_base64url(message, secret, algorithm)
+            return JWTEncodeResult(
+                jwt=jwt_token,
+                header=header_decoded,
+                payload=payload_copy,
+                signature=parts[2] if len(parts) == 3 else "",
+                algorithm=algorithm,
+                success=True,
+                warnings=self.warnings,
+                method="pyjwt"
+            )
 
-            # Full token
-            jwt_token = f"{message}.{signature_b64}"
-
-            return JWTEncodeResult(jwt=jwt_token,
-                                   header=header,
-                                   payload=payload,
-                                   signature=signature_b64,
-                                   algorithm=algorithm,
-                                   success=True)
         except Exception as e:
             err = f"Error al codificar JWT: {str(e)}"
             self.errors.append(err)
-            return JWTEncodeResult(jwt="", header=header or {}, payload=payload,
-                                   signature="", algorithm=algorithm, success=False, error=err)
+            return JWTEncodeResult("", header or {}, payload, "", algorithm, False, err, method="pyjwt")
 
     def encode_with_expiration(self, payload: Dict[str, Any], secret: str, expires_in_seconds: int = 3600, algorithm: str = 'HS256') -> JWTEncodeResult:
         payload = dict(payload)
@@ -191,3 +217,17 @@ class JWTEncoder:
         payload['iat'] = now
         payload['exp'] = now + int(expires_in_seconds)
         return self.encode(payload, secret, algorithm, add_iat=False)
+
+    def decode_and_verify(self, token: str, secret: str, algorithms: Optional[List[str]] = None, verify: bool = True) -> Dict[str, Any]:
+        if algorithms is None:
+            algorithms = ['HS256', 'HS384', 'HS512']
+
+        try:
+            decoded = jwt.decode(token, secret, algorithms=algorithms, options={"verify_signature": verify})
+            return {"success": True, "payload": decoded}
+        except jwt.ExpiredSignatureError:
+            return {"success": False, "error": "El token ha expirado"}
+        except jwt.InvalidSignatureError:
+            return {"success": False, "error": "Firma inválida"}
+        except jwt.InvalidTokenError as e:
+            return {"success": False, "error": f"Token inválido: {str(e)}"}
