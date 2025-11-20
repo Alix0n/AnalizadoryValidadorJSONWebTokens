@@ -1,26 +1,3 @@
-"""
-==============================================================================
-FASE 1: ANÁLISIS LÉXICO DE JSON WEB TOKENS (JWT)
-==============================================================================
-Proyecto: Analizador y Validador de JWT
-Curso: Lenguajes Formales 2025-2
-Estudiante: [Tu Nombre]
-
-Descripción:
-    Implementa el análisis léxico completo de JWT incluyendo:
-    - Identificación de alfabeto Base64URL
-    - Reconocimiento de delimitadores
-    - Tokenización de componentes
-    - Decodificación Base64URL
-    - Análisis de estructura JSON en header y payload
-
-Estructura JWT:
-    HEADER.PAYLOAD.SIGNATURE
-    
-    Donde cada parte está codificada en Base64URL
-==============================================================================
-"""
-
 import re
 import base64
 import json
@@ -28,16 +5,9 @@ from enum import Enum
 from dataclasses import dataclass
 from typing import List, Optional, Dict, Any, Tuple
 
-
-# ==============================================================================
 # 1. DEFINICIÓN DEL ALFABETO
-# ==============================================================================
-
 class Alfabeto:
-    """
-    Define los alfabetos utilizados en el análisis léxico de JWT.
-    """
-    
+
     # Alfabeto Base64URL (64 caracteres)
     BASE64URL_CHARS = set('ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_')
     
@@ -65,48 +35,32 @@ class Alfabeto:
     @staticmethod
     def describir_alfabeto() -> str:
         """Retorna una descripción del alfabeto."""
-        return f"""
-ALFABETO BASE64URL:
-  - Letras mayúsculas: A-Z (26 caracteres)
-  - Letras minúsculas: a-z (26 caracteres)
-  - Dígitos: 0-9 (10 caracteres)
-  - Símbolos: - _ (2 caracteres)
-  Total: 64 caracteres
+        return (
+        "ALFABETO BASE64URL:\n"
+        "  - Letras mayúsculas: A-Z (26 caracteres)\n"
+        "  - Letras minúsculas: a-z (26 caracteres)\n"
+        "  - Dígitos: 0-9 (10 caracteres)\n"
+        "  - Símbolos: - _ (2 caracteres)\n"
+        "  Total: 64 caracteres\n\n"
+        "DELIMITADOR JWT:\n"
+        "  - Punto: . (1 carácter)\n\n"
+        "ALFABETO TOTAL JWT:\n"
+        "  - Base64URL + Delimitador = 65 caracteres\n"
+    )
 
-DELIMITADOR JWT:
-  - Punto: . (1 carácter)
-
-ALFABETO TOTAL JWT:
-  - Base64URL + Delimitador = 65 caracteres
-"""
-
-
-# ==============================================================================
 # 2. TIPOS DE TOKENS
-# ==============================================================================
 
 class TokenType(Enum):
-    """Tipos de tokens identificados en el análisis léxico."""
-    HEADER_B64 = "HEADER_B64"          # Header codificado
-    PAYLOAD_B64 = "PAYLOAD_B64"        # Payload codificado
-    SIGNATURE_B64 = "SIGNATURE_B64"    # Signature codificada
-    DOT = "DOT"                        # Delimitador
+    HEADER_B64 = "HEADER_B64"         
+    PAYLOAD_B64 = "PAYLOAD_B64"        
+    SIGNATURE_B64 = "SIGNATURE_B64"    
+    DOT = "DOT"                        
     EOF = "EOF"                        # Fin de entrada
     ERROR = "ERROR"                    # Error léxico
 
 
 @dataclass
 class Token:
-    """
-    Representa un token identificado por el analizador léxico.
-    
-    Attributes:
-        tipo: Tipo del token (TokenType)
-        valor: Valor léxico del token
-        posicion: Posición inicial en la entrada
-        linea: Número de línea (siempre 1 para JWT)
-        columna: Columna inicial del token
-    """
     tipo: TokenType
     valor: str
     posicion: int
@@ -128,31 +82,13 @@ class Token:
             'longitud': len(self.valor)
         }
 
-
-# ==============================================================================
 # 3. DECODIFICADOR BASE64URL
-# ==============================================================================
 
 class Base64URLDecoder:
-    """
-    Maneja la codificación y decodificación Base64URL.
-    
-    Base64URL difiere de Base64 estándar en:
-    - Usa '-' en lugar de '+'
-    - Usa '_' en lugar de '/'
-    - No usa padding '='
-    """
-    
     @staticmethod
     def decodificar(cadena_b64: str) -> Optional[str]:
         """
         Decodifica una cadena Base64URL a texto UTF-8.
-        
-        Args:
-            cadena_b64: Cadena en Base64URL
-            
-        Returns:
-            String decodificado o None si hay error
         """
         try:
             # Agregar padding si es necesario
@@ -174,12 +110,6 @@ class Base64URLDecoder:
     def codificar(texto: str) -> str:
         """
         Codifica un texto a Base64URL.
-        
-        Args:
-            texto: String a codificar
-            
-        Returns:
-            String en Base64URL
         """
         # Codificar a bytes
         bytes_texto = texto.encode('utf-8')
@@ -192,10 +122,8 @@ class Base64URLDecoder:
         
         return b64_url
 
-
-# ==============================================================================
 # 4. ANALIZADOR LÉXICO PRINCIPAL
-# ==============================================================================
+
 
 class JWTLexer:
     """
@@ -220,6 +148,9 @@ class JWTLexer:
         self.tokens: List[Token] = []
         self.errores: List[str] = []
         self.advertencias: List[str] = []
+        self.mensajes_json: List[str] = []
+
+
         
         # Componentes decodificados
         self.header_decodificado: Optional[Dict[str, Any]] = None
@@ -409,13 +340,21 @@ class JWTLexer:
                 
                 try:
                     self.header_decodificado = json.loads(header_texto)
+                    mensaje = "✓ HEADER JSON válido"
+                    self.mensajes_json.append(mensaje)
+                    print("   " + mensaje)
                     print(f"   ✓ JSON válido")
                     print(f"   Estructura: {json.dumps(self.header_decodificado, indent=6)}")
                 except json.JSONDecodeError as e:
+                    mensaje = f"✗ HEADER JSON inválido: {str(e)}"
+                    self.mensajes_json.append(mensaje)
+                    self.errores.append(mensaje)
                     self.errores.append(f"Error: Header no es JSON válido - {str(e)}")
                     print(f"   ✗ Error de JSON: {str(e)}")
                     exito = False
             else:
+                mensaje = "✗ Error: Header no se pudo decodificar (Base64URL inválido)"
+                self.mensajes_json.append(mensaje)
                 self.errores.append("Error: No se pudo decodificar el header")
                 print("   ✗ Error en decodificación Base64URL")
                 exito = False
@@ -430,13 +369,19 @@ class JWTLexer:
                 
                 try:
                     self.payload_decodificado = json.loads(payload_texto)
+                    mensaje = "✓ PAYLOAD JSON válido"
+                    self.mensajes_json.append(mensaje)
                     print(f"   ✓ JSON válido")
                     print(f"   Estructura: {json.dumps(self.payload_decodificado, indent=6)}")
                 except json.JSONDecodeError as e:
+                    mensaje = f"✗ PAYLOAD JSON inválido: {str(e)}"
+                    self.mensajes_json.append(mensaje)
                     self.errores.append(f"Error: Payload no es JSON válido - {str(e)}")
                     print(f"   ✗ Error de JSON: {str(e)}")
                     exito = False
             else:
+                mensaje = "✗ Error: Payload no se pudo decodificar (Base64URL inválido)"
+                self.mensajes_json.append(mensaje)
                 self.errores.append("Error: No se pudo decodificar el payload")
                 print("   ✗ Error en decodificación Base64URL")
                 exito = False
@@ -483,124 +428,77 @@ class JWTLexer:
             for clave, valor in self.payload_decodificado.items():
                 print(f"    - {clave}: {valor} (tipo: {type(valor).__name__})")
     
+    # En tu lexer_service.py - Método generar_reporte()
+
     def generar_reporte(self) -> str:
         """
-        Genera un reporte completo del análisis léxico.
-        
-        Returns:
-            String con el reporte formateado
+        Genera un reporte textual del análisis léxico
         """
-        reporte = "\n" + "=" * 70 + "\n"
-        reporte += "REPORTE FINAL - ANÁLISIS LÉXICO\n"
-        reporte += "=" * 70 + "\n\n"
+        reporte = []
         
-        # Resumen de tokens
-        reporte += f"TOKENS IDENTIFICADOS: {len(self.tokens)}\n"
-        reporte += "-" * 70 + "\n"
-        for i, token in enumerate(self.tokens, 1):
-            reporte += f"{i}. {token}\n"
+        # Encabezado
+        reporte.append(f"Entrada: {self.entrada[:50]}{'...' if len(self.entrada) > 50 else ''}")
+        reporte.append(f"Longitud: {len(self.entrada)} caracteres")
+        reporte.append("")
         
-        # Errores
+        # Estructura detectada
+        reporte.append("Estructura detectada:")
+        if len(self.tokens) >= 5:
+            header_len = len(self.tokens[0].valor)
+            payload_len = len(self.tokens[2].valor)
+            signature_len = len(self.tokens[4].valor)
+            
+            reporte.append(f"  - HEADER:    {header_len} caracteres")
+            reporte.append(f"  - PAYLOAD:   {payload_len} caracteres")
+            reporte.append(f"  - SIGNATURE: {signature_len} caracteres")
+        reporte.append("")
+        
+        # Análisis de componentes
+        if len(self.tokens) > 0:
+            reporte.append("1. Analizando HEADER...")
+            header_val = self.tokens[0].valor
+            reporte.append(f"   ✓ HEADER válido: {header_val[:36]}{'...' if len(header_val) > 36 else ''}")
+            reporte.append("")
+        
+        if len(self.tokens) > 2:
+            reporte.append("2. Analizando PAYLOAD...")
+            payload_val = self.tokens[2].valor
+            reporte.append(f"   ✓ PAYLOAD válido: {payload_val[:50]}{'...' if len(payload_val) > 50 else ''}")
+            reporte.append("")
+        
+        if len(self.tokens) > 4:
+            reporte.append("3. Analizando SIGNATURE...")
+            sig_val = self.tokens[4].valor
+            reporte.append(f"   ✓ SIGNATURE válida: {sig_val[:50]}{'...' if len(sig_val) > 50 else ''}")
+            reporte.append("")
+        
+        if self.mensajes_json:
+            reporte.append("✅ VALIDACIÓN DE JSON:")
+            for msg in self.mensajes_json:
+                reporte.append(f"   {msg}")
+            reporte.append("")
+            
+        # Errores y advertencias
         if self.errores:
-            reporte += "\n❌ ERRORES ENCONTRADOS:\n"
-            reporte += "-" * 70 + "\n"
-            for i, error in enumerate(self.errores, 1):
-                reporte += f"{i}. {error}\n"
-        else:
-            reporte += "\n✅ SIN ERRORES LÉXICOS\n"
+            reporte.append("❌ ERRORES DETECTADOS:")
+            for err in self.errores:
+                reporte.append(f"   • {err}")
+            reporte.append("")
         
-        # Advertencias
         if self.advertencias:
-            reporte += "\n⚠️  ADVERTENCIAS:\n"
-            reporte += "-" * 70 + "\n"
-            for i, adv in enumerate(self.advertencias, 1):
-                reporte += f"{i}. {adv}\n"
+            reporte.append("⚠️ ADVERTENCIAS:")
+            for adv in self.advertencias:
+                reporte.append(f"   • {adv}")
+            reporte.append("")
         
-        # Componentes decodificados
-        if self.header_decodificado:
-            reporte += "\nHEADER DECODIFICADO:\n"
-            reporte += "-" * 70 + "\n"
-            reporte += json.dumps(self.header_decodificado, indent=2, ensure_ascii=False) + "\n"
+        # Resumen
+        reporte.append(f"Total de tokens identificados: {len(self.tokens)}")
         
-        if self.payload_decodificado:
-            reporte += "\nPAYLOAD DECODIFICADO:\n"
-            reporte += "-" * 70 + "\n"
-            reporte += json.dumps(self.payload_decodificado, indent=2, ensure_ascii=False) + "\n"
-        
-        reporte += "\n" + "=" * 70 + "\n"
-        
-        return reporte
+        return "\n".join(reporte)
     
     def tiene_errores(self) -> bool:
         """Verifica si hubo errores durante el análisis."""
         return len(self.errores) > 0
 
 
-# ==============================================================================
-# 5. EJEMPLOS Y CASOS DE PRUEBA
-# ==============================================================================
-
-def ejecutar_casos_prueba():
-    """Ejecuta una suite de casos de prueba."""
-    
-    print("\n" + "█" * 70)
-    print("█" + " " * 20 + "CASOS DE PRUEBA - FASE 1" + " " * 24 + "█")
-    print("█" * 70 + "\n")
-    
-    casos = [
-        {
-            'nombre': 'Caso 1: JWT Válido Simple',
-            'jwt': 'eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjMifQ.SflKxw',
-            'esperado': 'válido'
-        },
-        {
-            'nombre': 'Caso 2: JWT Válido Completo',
-            'jwt': 'eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9.eyJzdWIiOiIxMjM0NTY3ODkwIiwibmFtZSI6IkpvaG4gRG9lIiwiaWF0IjoxNTE2MjM5MDIyfQ.SflKxwRJSMeKKF2QT4fwpMeJf36POk6yJV_adQssw5c',
-            'esperado': 'válido'
-        },
-        {
-            'nombre': 'Caso 3: JWT con Caracteres Inválidos',
-            'jwt': 'eyJhbGc+.eyJzdWI.SflKxw',
-            'esperado': 'inválido'
-        },
-        {
-            'nombre': 'Caso 4: JWT Incompleto',
-            'jwt': 'eyJhbGc.eyJzdWI',
-            'esperado': 'inválido'
-        },
-        {
-            'nombre': 'Caso 5: JWT con Padding Base64',
-            'jwt': 'eyJhbGc=.eyJzdWI=.SflKxw=',
-            'esperado': 'inválido'
-        }
-    ]
-    
-    for i, caso in enumerate(casos, 1):
-        print(f"\n{'═' * 70}")
-        print(f"CASO {i}: {caso['nombre']}")
-        print(f"{'═' * 70}")
-        
-        lexer = JWTLexer(caso['jwt'])
-        tokens = lexer.tokenizar()
-        lexer.decodificar_componentes()
-        lexer.analizar_estructura_json()
-        
-        print(lexer.generar_reporte())
-        
-        resultado = "VÁLIDO ✅" if not lexer.tiene_errores() else "INVÁLIDO ❌"
-        esperado = caso['esperado'].upper()
-        
-        print(f"\nRESULTADO: {resultado}")
-        print(f"ESPERADO: {esperado}")
-        
-        if (resultado == "VÁLIDO ✅" and esperado == "VÁLIDO") or \
-           (resultado == "INVÁLIDO ❌" and esperado == "INVÁLIDO"):
-            print("🎯 TEST PASADO\n")
-        else:
-            print("⚠️  TEST FALLIDO\n")
-
-
-# ==============================================================================
-# PROGRAMA PRINCIPAL
-# ==============================================================================
 

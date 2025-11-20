@@ -16,12 +16,40 @@ def analyze_jwt():
     data = request.get_json() or {}
     token = data.get("jwt", "")
 
+    if not token:
+        return jsonify({"success": False, "error": "No se recibió un token JWT."}), 400
+
+    partes = token.split(".")
+
+
+    if len(partes) != 3:
+        return jsonify({
+            "success": False,
+            "error": "El token JWT está incompleto. Debe tener formato header.payload.signature"
+        }), 400
+
+    header, payload, signature = partes
+
+    if not header or not payload or not signature:
+        return jsonify({
+            "success": False,
+            "error": "El token JWT está incompleto. Debe tener formato header.payload.signature"
+        }), 400
+
+    
     lexer = JWTLexer(token)
     lexer.tokenizar()
     lexer.decodificar_componentes()
     lexer.analizar_estructura_json()
-
     alfabeto_info = Alfabeto.describir_alfabeto()
+    reporte = lexer.generar_reporte() 
+    estructura_detectada = {
+    "entrada": lexer.entrada,
+    "longitud": len(lexer.entrada),
+    "header": len(lexer.tokens[0].valor) if lexer.tokens else 0,
+    "payload": len(lexer.tokens[2].valor) if lexer.tokens else 0,
+    "signature": len(lexer.tokens[4].valor) if lexer.tokens else 0
+}
 
     resultado = {
         "alfabeto": alfabeto_info,
@@ -29,7 +57,9 @@ def analyze_jwt():
         "header_decodificado": lexer.header_decodificado,
         "payload_decodificado": lexer.payload_decodificado,
         "errores": lexer.errores,
-        "advertencias": lexer.advertencias
+        "advertencias": lexer.advertencias,
+        "reporte_analisis_lexico": reporte ,
+        "estructura_detectada": estructura_detectada,
     }
 
     # Sintáctico
@@ -38,6 +68,8 @@ def analyze_jwt():
     resultado["sintactico"] = {
         "valido": sintaxis_valida,
         "errores": parser.errores,
+        "gramatica": parser.mostrar_producciones(),
+        "derivaciones": parser.mostrar_derivaciones(),
         "arbol_sintactico": parser.generar_arbol()
     }
 
@@ -48,10 +80,18 @@ def analyze_jwt():
     tabla_simbolos = generar_tabla_simbolos(lexer.header_decodificado, lexer.payload_decodificado)
 
     resultado["semantico"] = {
-        "errores": errores_header + errores_payload,
-        "validacion_tiempo": validacion_tiempo,
-        "tabla_simbolos": tabla_simbolos
-    }
+    "errores": errores_header + errores_payload,
+    "validacion_tiempo": {
+        "estado": validacion_tiempo["estado"],
+        "fecha_actual": validacion_tiempo["fecha_actual"],
+        "fecha_emision": validacion_tiempo["fecha_emision"],
+        "fecha_expiracion": validacion_tiempo["fecha_expiracion"],
+        "detalles": validacion_tiempo["detalles"],
+        "vigente": not any(d in ["Token expirado", "Token emitido en el futuro", "Token aún no es válido (nbf futuro)"] for d in validacion_tiempo["detalles"])
+    },
+    "tabla_simbolos": tabla_simbolos
+}
+
 
     return jsonify(resultado)
 
@@ -189,6 +229,17 @@ def validate_secret():
         return jsonify(response), 200
     except Exception as e:
         return jsonify({"valid": False, "error": f"Error al validar: {str(e)}"}), 500
+
+@jwt_bp.route("/verify-signature", methods=["POST"])
+def verify_signature():
+    data = request.get_json()
+    token = data.get("jwt")
+    secret = data.get("secret")
+
+    encoder = JWTEncoder()
+    result = encoder.decode_and_verify(token, secret)
+
+    return jsonify(result)
 
 
 @jwt_bp.route("/test-db", methods=["GET"])

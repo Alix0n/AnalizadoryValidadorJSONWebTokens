@@ -26,7 +26,7 @@ def analizar_payload_semantico(payload):
     tipos_correctos = {
         "iss": str,
         "sub": str,
-        "aud": str,
+        "aud": (str, list),
         "exp": int,
         "iat": int,
         "nbf": int
@@ -50,20 +50,25 @@ def analizar_payload_semantico(payload):
 
 
 def validar_tiempo(payload):
-    """Valida si el token está vigente según 'exp', 'iat', 'nbf'"""
+    """Valida si el token está vigente según 'exp', 'iat', 'nbf' y devuelve fechas legibles"""
     if not isinstance(payload, dict):
-        return "❌ Payload inválido"
+        return {
+            "estado": "❌ Payload inválido",
+            "fecha_emision": None,
+            "fecha_expiracion": None,
+            "detalles": []
+        }
 
     ahora = int(datetime.datetime.now().timestamp())
     fecha_actual = convertir_fecha(ahora)
-    exp = payload.get("exp")
+    
     iat = payload.get("iat")
-    fecha_token = convertir_fecha(iat)
+    exp = payload.get("exp")
     nbf = payload.get("nbf")
 
-    print(f"🕒 Fecha actual del sistema: {fecha_actual} ({ahora})")
-    print(f"🕒 Fecha del token: {fecha_token} ({iat})")
-
+    fecha_iat = convertir_fecha(iat) if iat else "⚠️ No disponible"
+    fecha_exp = convertir_fecha(exp) if exp else "⚠️ Token sin fecha de expiración"
+    
     detalles = []
 
     if exp and ahora > exp:
@@ -76,7 +81,13 @@ def validar_tiempo(payload):
     if not detalles:
         detalles.append("Token vigente y válido temporalmente")
 
-    return detalles
+    return {
+        "estado": "✅ Token válido temporalmente" if not detalles[:-1] else "⚠️ Token con advertencias",
+        "fecha_emision": fecha_iat,
+        "fecha_expiracion": fecha_exp,
+        "detalles": detalles,
+        "fecha_actual": fecha_actual
+    }
 
 
 def generar_tabla_simbolos(header, payload):
