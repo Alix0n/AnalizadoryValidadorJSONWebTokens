@@ -1,4 +1,4 @@
-import datetime
+from datetime import datetime, timezone
 
 def analizar_header_semantico(header):
     errores = []
@@ -13,85 +13,133 @@ def analizar_header_semantico(header):
 
     return errores
 
+
 def convertir_fecha(timestamp):
     """Convierte un timestamp UNIX a fecha legible"""
     try:
-        return datetime.datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
+        return datetime.fromtimestamp(timestamp).strftime("%Y-%m-%d %H:%M:%S")
     except Exception:
         return "⚠️ Valor no convertible a fecha"
 
+
+def convertir_entero(valor, nombre, errores):
+    if valor is None:
+        return None
+    try:
+        return int(valor)
+    except:
+        errores.append(f"El claim '{nombre}' debe ser un número entero (recibido: {type(valor).__name__})")
+        return None
+
+
 def analizar_payload_semantico(payload):
     errores = []
-    claims_estandar = ["iss", "sub", "aud", "exp", "iat", "nbf"]
-    tipos_correctos = {
-        "iss": str,
-        "sub": str,
-        "aud": (str, list),
-        "exp": int,
-        "iat": int,
-        "nbf": int
-    }
 
     if not isinstance(payload, dict):
         return ["El payload no tiene formato JSON válido"]
 
-    for claim in claims_estandar:
+    # ⚠️ NUEVAS REGLAS
+    obligatorio = ["sub"]
+    opcionales = ["iat", "exp"]   # Se validan solo si existen
+    ignorar = ["iss", "aud", "nbf"]  # Ya NO se consideran obligatorios
+
+    # Claims personalizados no generan error
+
+    # ----- Validación de claims obligatorios -----
+    for claim in obligatorio:
         if claim not in payload:
-            errores.append(f"Claim estándar '{claim}' no encontrado en payload")
-        else:
+            errores.append(f"Claim obligatorio '{claim}' no encontrado en el payload")
+
+    # ----- Validación opcionales -----
+    for claim in opcionales:
+        if claim in payload:
             valor = payload[claim]
-            tipo_esperado = tipos_correctos[claim]
-            if not isinstance(valor, tipo_esperado):
-                errores.append(
-                    f"Claim '{claim}' tiene tipo incorrecto (esperado {tipo_esperado.__name__}, recibido {type(valor).__name__})"
-                )
+            if isinstance(valor, str):
+                if valor.isdigit():
+                    payload[claim] = int(valor)
+                else:
+                    errores.append(f"Claim '{claim}' debe ser un entero, no '{valor}'")
+            elif not isinstance(valor, int):
+                errores.append(f"Claim '{claim}' debe ser un entero")
+
+    # ----- Claims ignorados -----
+    # iss, aud, nbf → no se validan ni se reporta error
 
     return errores
 
 
 def validar_tiempo(payload):
-    """Valida si el token está vigente según 'exp', 'iat', 'nbf' y devuelve fechas legibles"""
-    if not isinstance(payload, dict):
+
+    if payload is None:
         return {
-            "estado": "❌ Payload inválido",
-            "fecha_emision": None,
-            "fecha_expiracion": None,
-            "detalles": []
+            "estado": "error",
+            "detalle": ["El payload no es válido, no se puede validar el tiempo."],
+            "fecha_actual": None,
+            "fecha_exp": None,
+            "fecha_inicio": None,
+            "fecha_emision": None
         }
 
-    ahora = int(datetime.datetime.now().timestamp())
-    fecha_actual = convertir_fecha(ahora)
-    
-    iat = payload.get("iat")
+    ahora = int(datetime.utcnow().timestamp())
+
     exp = payload.get("exp")
-    nbf = payload.get("nbf")
+    nbf = payload.get("nbf")  # Ignorado si no existe
+    iat = payload.get("iat")
 
-    fecha_iat = convertir_fecha(iat) if iat else "⚠️ No disponible"
-    fecha_exp = convertir_fecha(exp) if exp else "⚠️ Token sin fecha de expiración"
-    
-    detalles = []
-
-    if exp and ahora > exp:
-        detalles.append("Token expirado")
-    if iat and ahora < iat:
-        detalles.append("Token emitido en el futuro")
-    if nbf and ahora < nbf:
-        detalles.append("Token aún no es válido (nbf futuro)")
-
-    if not detalles:
-        detalles.append("Token vigente y válido temporalmente")
-
-    return {
-        "estado": "✅ Token válido temporalmente" if not detalles[:-1] else "⚠️ Token con advertencias",
-        "fecha_emision": fecha_iat,
-        "fecha_expiracion": fecha_exp,
-        "detalles": detalles,
-        "fecha_actual": fecha_actual
+    respuesta = {
+        "estado": "sin_claims",
+        "detalle": [],
+        "fecha_actual": ahora,
+        "fecha_exp": exp if exp is not None else None,
+        "fecha_inicio": nbf if nbf is not None else None,
+        "fecha_emision": iat if iat is not None else None
     }
+
+    # Si no hay claims temporales
+    if exp is None and nbf is None and iat is None:
+        respuesta["detalle"].append("El payload no contiene claims de tiempo.")
+        return respuesta
+
+    respuesta["estado"] = "valido"
+
+    # ----- VALIDACIÓN EXP -----
+    if exp is not None:
+        try:
+            exp = int(exp)
+            respuesta["fecha_exp"] = exp
+            if ahora > exp:
+                respuesta["estado"] = "expirado"
+                respuesta["detalle"].append("El token está expirado (exp).")
+        except:
+            respuesta["estado"] = "error"
+            respuesta["detalle"].append("exp no es un número válido.")
+
+    # ----- VALIDACIÓN NBF -----
+    # Aunque nbf ya no es obligatorio, sí se valida si existe
+    if nbf is not None:
+        try:
+            nbf = int(nbf)
+            respuesta["fecha_inicio"] = nbf
+            if ahora < nbf:
+                respuesta["estado"] = "no_activo"
+                respuesta["detalle"].append("El token aún no está activo (nbf).")
+        except:
+            respuesta["estado"] = "error"
+            respuesta["detalle"].append("nbf no es un número válido.")
+
+    # ----- VALIDACIÓN IAT -----
+    if iat is not None:
+        try:
+            iat = int(iat)
+            respuesta["fecha_emision"] = iat
+        except:
+            respuesta["estado"] = "error"
+            respuesta["detalle"].append("iat no es un número válido.")
+
+    return respuesta
 
 
 def generar_tabla_simbolos(header, payload):
-    """Crea una tabla de símbolos con los campos del header y payload"""
     tabla = []
 
     if isinstance(header, dict):

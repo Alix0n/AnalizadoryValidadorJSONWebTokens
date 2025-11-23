@@ -1,4 +1,3 @@
-# app/routes/jwt_routes.py
 from flask import Blueprint, request, jsonify
 from app.services.encoder_service import JWTEncoder, SecretKeyManager
 from app.services.lexer_service import JWTLexer, Alfabeto
@@ -9,7 +8,6 @@ from app.models.db import db, test_cases
 import jwt  # PyJWT
 
 jwt_bp = Blueprint("jwt_bp", __name__, url_prefix="/api")
-
 
 @jwt_bp.route("/analyze", methods=["POST"])
 def analyze_jwt():
@@ -76,8 +74,26 @@ def analyze_jwt():
     # Semántico
     errores_header = analizar_header_semantico(lexer.header_decodificado)
     errores_payload = analizar_payload_semantico(lexer.payload_decodificado)
+
+    if lexer.payload_decodificado is None:
+        resultado["semantico"] = {
+            "errores": errores_header + ["El payload no es JSON válido o no pudo decodificarse."],
+            "validacion_tiempo": {
+                "estado": "error",
+                "fecha_actual": None,
+                "fecha_emision": None,
+                "fecha_expiracion": None,
+                "detalles": ["No se pueden validar claims de tiempo porque el payload es inválido."],
+                "vigente": False
+            },
+            "tabla_simbolos": []
+        }
+        return jsonify(resultado)
+    # ----------------------------------------------------------
+
     validacion_tiempo = validar_tiempo(lexer.payload_decodificado)
     tabla_simbolos = generar_tabla_simbolos(lexer.header_decodificado, lexer.payload_decodificado)
+
 
     resultado["semantico"] = {
     "errores": errores_header + errores_payload,
@@ -85,9 +101,17 @@ def analyze_jwt():
         "estado": validacion_tiempo["estado"],
         "fecha_actual": validacion_tiempo["fecha_actual"],
         "fecha_emision": validacion_tiempo["fecha_emision"],
-        "fecha_expiracion": validacion_tiempo["fecha_expiracion"],
-        "detalles": validacion_tiempo["detalles"],
-        "vigente": not any(d in ["Token expirado", "Token emitido en el futuro", "Token aún no es válido (nbf futuro)"] for d in validacion_tiempo["detalles"])
+        "fecha_expiracion": validacion_tiempo["fecha_exp"],   
+        "detalles": validacion_tiempo["detalle"],             
+        "vigente": not any(
+            d in [
+                "Token expirado",
+                "Token emitido en el futuro",
+                "Token aún no es válido (nbf futuro)",
+                "El token está expirado (exp)."
+            ]
+            for d in validacion_tiempo["detalle"]
+        )
     },
     "tabla_simbolos": tabla_simbolos
 }
