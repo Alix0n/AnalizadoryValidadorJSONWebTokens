@@ -38,7 +38,6 @@ def analizar_payload_semantico(payload):
     if not isinstance(payload, dict):
         return ["El payload no tiene formato JSON válido"]
 
-    # ⚠️ NUEVAS REGLAS
     obligatorio = ["sub"]
     opcionales = ["iat", "exp"]   # Se validan solo si existen
     ignorar = ["iss", "aud", "nbf"]  # Ya NO se consideran obligatorios
@@ -80,63 +79,69 @@ def validar_tiempo(payload):
             "fecha_emision": None
         }
 
-    ahora = int(datetime.utcnow().timestamp())
+    ahora = int(datetime.now(timezone.utc).timestamp())
 
     exp = payload.get("exp")
     nbf = payload.get("nbf")  # Ignorado si no existe
     iat = payload.get("iat")
 
     respuesta = {
-        "estado": "sin_claims",
+        "estado": None,
         "detalle": [],
-        "fecha_actual": ahora,
-        "fecha_exp": exp if exp is not None else None,
-        "fecha_inicio": nbf if nbf is not None else None,
-        "fecha_emision": iat if iat is not None else None
+        "fecha_actual": convertir_fecha(ahora),
+        "fecha_exp": None,
+        "fecha_inicio": None,
+        "fecha_emision": None
     }
 
     # Si no hay claims temporales
     if exp is None and nbf is None and iat is None:
+        respuesta["estado"] = "sin_claims"
         respuesta["detalle"].append("El payload no contiene claims de tiempo.")
         return respuesta
-
-    respuesta["estado"] = "valido"
 
     # ----- VALIDACIÓN EXP -----
     if exp is not None:
         try:
             exp = int(exp)
-            respuesta["fecha_exp"] = exp
+            respuesta["fecha_exp"] = convertir_fecha(exp)
             if ahora > exp:
                 respuesta["estado"] = "expirado"
                 respuesta["detalle"].append("El token está expirado (exp).")
         except:
             respuesta["estado"] = "error"
             respuesta["detalle"].append("exp no es un número válido.")
+            respuesta["fecha_exp"] = "⚠️ Valor inválido"
 
     # ----- VALIDACIÓN NBF -----
-    # Aunque nbf ya no es obligatorio, sí se valida si existe
     if nbf is not None:
         try:
             nbf = int(nbf)
-            respuesta["fecha_inicio"] = nbf
+            respuesta["fecha_inicio"] = convertir_fecha(nbf)
             if ahora < nbf:
                 respuesta["estado"] = "no_activo"
                 respuesta["detalle"].append("El token aún no está activo (nbf).")
         except:
             respuesta["estado"] = "error"
             respuesta["detalle"].append("nbf no es un número válido.")
+            respuesta["fecha_inicio"] = "⚠️ Valor inválido"
 
     # ----- VALIDACIÓN IAT -----
     if iat is not None:
         try:
             iat = int(iat)
-            respuesta["fecha_emision"] = iat
+            respuesta["fecha_emision"] = convertir_fecha(iat)
         except:
             respuesta["estado"] = "error"
             respuesta["detalle"].append("iat no es un número válido.")
+            respuesta["fecha_emision"] = "⚠️ Valor inválido"
+
+    # Si no fue expirado, ni no_activo, ni error → es válido
+    if respuesta["estado"] is None:
+        respuesta["estado"] = "valido"
 
     return respuesta
+
 
 
 def generar_tabla_simbolos(header, payload):

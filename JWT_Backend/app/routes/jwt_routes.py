@@ -4,7 +4,7 @@ from app.services.lexer_service import JWTLexer, Alfabeto
 from app.services.sintactico import JWTParser
 from app.services.semantic_service import analizar_header_semantico, analizar_payload_semantico, validar_tiempo, generar_tabla_simbolos
 from app.models.db import db, test_cases
-
+from app.models.db import guardar_resultado
 import jwt  # PyJWT
 
 jwt_bp = Blueprint("jwt_bp", __name__, url_prefix="/api")
@@ -13,6 +13,7 @@ jwt_bp = Blueprint("jwt_bp", __name__, url_prefix="/api")
 def analyze_jwt():
     data = request.get_json() or {}
     token = data.get("jwt", "")
+    
 
     if not token:
         return jsonify({"success": False, "error": "No se recibió un token JWT."}), 400
@@ -21,6 +22,7 @@ def analyze_jwt():
 
 
     if len(partes) != 3:
+        
         return jsonify({
             "success": False,
             "error": "El token JWT está incompleto. Debe tener formato header.payload.signature"
@@ -58,6 +60,8 @@ def analyze_jwt():
         "advertencias": lexer.advertencias,
         "reporte_analisis_lexico": reporte ,
         "estructura_detectada": estructura_detectada,
+        "es_malformado": lexer.es_malformado()
+        
     }
 
     # Sintáctico
@@ -74,20 +78,28 @@ def analyze_jwt():
     # Semántico
     errores_header = analizar_header_semantico(lexer.header_decodificado)
     errores_payload = analizar_payload_semantico(lexer.payload_decodificado)
+    
+    # Validar tiempo
+    validacion_tiempo = validar_tiempo(lexer.payload_decodificado)
+
+    # Determinar vigencia real
+    vigente = validacion_tiempo["estado"] == "valido"
 
     if lexer.payload_decodificado is None:
         resultado["semantico"] = {
             "errores": errores_header + ["El payload no es JSON válido o no pudo decodificarse."],
             "validacion_tiempo": {
-                "estado": "error",
-                "fecha_actual": None,
-                "fecha_emision": None,
-                "fecha_expiracion": None,
-                "detalles": ["No se pueden validar claims de tiempo porque el payload es inválido."],
-                "vigente": False
+                "estado": validacion_tiempo["estado"],
+                "fecha_actual": validacion_tiempo["fecha_actual"],
+                "fecha_emision": validacion_tiempo["fecha_emision"],
+                "fecha_expiracion": validacion_tiempo["fecha_exp"],
+                "detalles": validacion_tiempo["detalle"],
+                "vigente": vigente
             },
             "tabla_simbolos": []
         }
+        resultado["descripcion"] = clasificar_token(token, resultado)
+        guardar_resultado(resultado["descripcion"], token, resultado)  # <-- se guarda siempre
         return jsonify(resultado)
     # ----------------------------------------------------------
 
@@ -103,21 +115,60 @@ def analyze_jwt():
         "fecha_emision": validacion_tiempo["fecha_emision"],
         "fecha_expiracion": validacion_tiempo["fecha_exp"],   
         "detalles": validacion_tiempo["detalle"],             
-        "vigente": not any(
-            d in [
-                "Token expirado",
-                "Token emitido en el futuro",
-                "Token aún no es válido (nbf futuro)",
-                "El token está expirado (exp)."
-            ]
-            for d in validacion_tiempo["detalle"]
-        )
+        "vigente": validacion_tiempo["estado"] == "valido"   # <-- usar directamente
+
     },
     "tabla_simbolos": tabla_simbolos
 }
 
+    resultado["descripcion"] = clasificar_token(token, resultado)
+    guardar_resultado(resultado["descripcion"], token, resultado)
 
     return jsonify(resultado)
+
+def clasificar_token(token, resultado):
+    """
+    Clasifica el token según errores detectados o estado.
+    Devuelve un string con la descripción.
+    """
+    # 1. Revisar token malformado
+    if resultado.get("es_malformado"):  # <- flag del lexer
+        return "Token malformado (sintaxis incorrecta)"
+
+    semantico = resultado.get("semantico", {})
+    validacion_tiempo = semantico.get("validacion_tiempo", {})
+    errores_payload = semantico.get("errores", [])
+
+    estado = validacion_tiempo.get("estado", "")
+    detalles = validacion_tiempo.get("detalles", [])
+
+    # 2. Firma inválida
+    if "Firma inválida" in errores_payload:
+        return "Token con firma inválida"
+
+    # 3. Si el token no es "válido", manejar expirado o futuro
+    if estado != "valido":
+        if estado == "expirado" or any("expirado" in d.lower() for d in detalles):
+            return "Token expirado"
+        if estado == "no_activo" or any("aún no está activo" in d.lower() for d in detalles):
+            return "Token emitido en el futuro"
+        if estado == "error":
+            return "Token con claims de tiempo inválidos"
+
+    # 4. Token es válido, pero revisar si en los detalles dice expirado
+    if estado == "valido" and any("expirado" in d.lower() for d in detalles):
+        return "Token expirado"
+
+    # 5. Claims faltantes
+    if any("Campo obligatorio" in e for e in errores_payload):
+        return "Token con claims faltantes"
+
+    # 6. Tipos de datos incorrectos
+    if any("tipo de dato" in e.lower() for e in errores_payload):
+        return "Token con tipos de datos incorrectos"
+
+    # 7. Todo correcto → válido
+    return "Token válido"
 
 
 @jwt_bp.route("/encode", methods=["POST"])
@@ -222,6 +273,14 @@ def decode_verify_jwt():
     except Exception as e:
         return jsonify({"success": False, "verified": False, "error": f"Error al decodificar: {str(e)}"}), 500
 
+@jwt_bp.route("/history", methods=["GET"])
+def history():
+    try:
+        resultados = list(test_cases.find({}, {"_id": 0, "token": 1, "descripcion": 1}))
+        return jsonify({"success": True, "data": resultados})
+    except Exception as e:
+        return jsonify({"success": False, "error": str(e)}), 500
+
 
 @jwt_bp.route("/validate-secret", methods=["POST"])
 def validate_secret():
@@ -266,11 +325,8 @@ def verify_signature():
     return jsonify(result)
 
 
-@jwt_bp.route("/test-db", methods=["GET"])
-def test_db():
-    try:
-        test_cases.insert_one({"test": "conexion_exitosa"})
-        count = test_cases.count_documents({})
-        return jsonify({"mensaje": "Conexión a MongoDB exitosa ✅", "documentos_totales": count})
-    except Exception as e:
-        return jsonify({"error": f"No se pudo conectar a MongoDB ❌: {str(e)}"}), 500
+
+
+
+
+

@@ -55,7 +55,6 @@ class TokenType(Enum):
     PAYLOAD_B64 = "PAYLOAD_B64"        
     SIGNATURE_B64 = "SIGNATURE_B64"    
     DOT = "DOT"                        
-    EOF = "EOF"                        # Fin de entrada
     ERROR = "ERROR"                    # Error léxico
 
 
@@ -157,6 +156,23 @@ class JWTLexer:
         self.payload_decodificado: Optional[Dict[str, Any]] = None
         self.signature_raw: Optional[str] = None
     
+    def es_malformado(self) -> bool:
+        """
+        Indica si el JWT es malformado, ya sea por estructura,
+        Base64URL inválido o JSON inválido.
+        """
+        # 1. Estructura incorrecta
+        if self.entrada.count('.') != 2:
+            return True
+        
+        # 2. Errores léxicos de header o payload
+        for err in self.errores:
+            if "no es JSON válido" in err or "Error estructural" in err:
+                return True
+        
+        return False
+
+
     def _validar_base64url(self, cadena: str) -> Tuple[bool, Optional[str]]:
         """
         Valida que una cadena solo contenga caracteres Base64URL.
@@ -185,7 +201,6 @@ class JWTLexer:
         1. Validar estructura básica (3 partes separadas por '.')
         2. Validar caracteres Base64URL en cada parte
         3. Crear tokens para cada componente
-        4. Agregar token EOF
         
         Returns:
             Lista de tokens identificados
@@ -305,8 +320,7 @@ class JWTLexer:
         posicion_actual += len(signature)
         columna_actual += len(signature)
         
-        # Token EOF
-        self.tokens.append(self._crear_token(TokenType.EOF, '', posicion_actual, columna_actual))
+        
         
         print(f"\n✓ Tokenización completada: {len(self.tokens)} tokens generados")
         
